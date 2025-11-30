@@ -1,0 +1,161 @@
+---
+title: "Global emissions from power subsector vs GDP"
+author: "Aakriti Poudel"
+format:
+  html:
+    code-fold: show
+    embed-resources: true
+execute:
+  echo: true
+  warning: false
+  message: false
+  error: false
+---
+
+Potential questions for the final project
+1.	Which countries achieved emission reductions while maintaining GDP growth?
+2.	Do countries with similar GDP levels show similar or different sub-sector emission trends?
+3.	When emissions reduce in one sector, do they increase in other sub-sectors?
+
+This dataset provides annual country-level emissions from year 2015 to 2024, disaggregated by 'power' subsector. The data was derived from Climate Trace (<https://climatetrace.org/data>). 
+
+```{r}
+# Load all necessary libraries
+library(tidyverse)
+library(dplyr)
+library(janitor)
+library(here)
+```
+
+```{r}
+# Read the data for power sector
+electricity <- read_csv(here::here('data', 'power', 'DATA', 'electricity-generation_country_emissions_v5_1_0.csv'),
+                        na = c(" ", "0", "0.0", "NA")) %>%
+  clean_names()
+
+heat_plants <- read_csv(here::here('data', 'power', 'DATA', 'heat-plants_country_emissions_v5_1_0.csv'),
+                        na = c(" ", "0", "0.0", "NA")) %>% 
+  clean_names()
+
+other_energy <- read_csv(here::here('data', 'power', 'DATA', 'other-energy-use_country_emissions_v5_1_0.csv'),
+                        na = c(" ", "0", "0.0", "NA")) %>%
+  clean_names()
+
+# Read the GDP dataset
+gdp <- read_csv(here::here('data', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_280632', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_280632.csv'),
+                        na = c(" ", "NA"),
+                skip = 4) %>%
+  clean_names()
+
+```
+```{r}
+# Combine three data sets
+power <- bind_rows(electricity, heat_plants, other_energy)
+
+# View the result
+print(power)
+```
+
+
+```{r}
+# Renaming column the name of country column
+
+#df_rename <- df %>%
+  #rename(country = iso3_country )
+```
+
+```{r}
+power$start_time <- as.Date(power$start_time)
+class(power$start_time)
+
+```
+
+```{r}
+power_annual <- power %>%
+  mutate(year = year(power$start_time)) 
+
+class(power_annual$year)
+
+```
+```{r}
+# Rename the column and filter year 2025
+power_annual_cleaned <- power_annual %>%
+  # Rename the column to match with gdp dataset
+  rename(country_code = iso3_country) %>% 
+  # Filter out the year 2025
+  filter(year != 2025)
+
+```
+
+
+```{r}
+# Convert data to long format
+gdp_long<- gdp %>%
+  select(-x70, -x1960:-x2014) %>% # Drop 'x70' column and from x1960 to x2014
+  pivot_longer(cols = starts_with("x"),
+               names_to = "year",
+               values_to = "gdp_values") %>% 
+  # Remove 'x' from the 'year' string
+  mutate(year = stringr::str_replace(year, pattern = "x", replacement = ""), 
+  # Convert the resulting string to a numeric data type
+  year = as.numeric(year))
+```
+
+```{r}
+# Join the data frame and reorder the columns
+power_gdp <- power_annual_cleaned %>%
+  left_join(gdp_long, by = c("country_code", "year")) %>% 
+  # Reorder the columns by position
+  select(13, 1, 12, everything())
+
+```
+
+
+```{r}
+# power_mean <- power_annual %>%
+#   group_by(iso3_country) %>% 
+#   summarize(mean = mean(emissions_quantity)) %>% 
+#   arrange(desc(mean))
+```
+
+```{r}
+# # Top 10 countries for emission
+# #top_ten <- list(df_mean$country[1:10])
+# #class(top_ten)
+# 
+# top_ten <- df_mean$country[1:10]
+
+```
+
+```{r}
+# top_countries <- df_year %>%
+#   filter(country %in% top_ten)
+  
+```
+
+```{r}
+# plot <- ggplot(top_countries, aes(x = start_time, y = emissions_quantity, color = country)) +
+#                geom_line() +
+#   theme_classic() +
+#   scale_x_date(
+#     date_breaks = 'years',
+#     date_labels = "%Y") +
+#   scale_y_continuous(
+#     # Divide the values by 1,000,000
+#     labels = scales::label_number(scale = 1e-6, suffix = "M t")) +
+#   labs(x = "Year",
+#        y = "CO2 emission per metric tonnes",
+#        title = "Annual top 10 carbon emitting countries from 2015 to 2024
+#        by road transportation subsector")
+# 
+# plot
+```
+
+```{r}
+
+# ggsave("carbon-emission.png", width = 6, height = 4)
+```
+
+```{r}
+# This graph represents the annual top 10 carbon emitting countries by road transportation subsector from 2015 to 2024. The graph shows that the US is the most carbon emitting country, followed by China and Japan.
+```
