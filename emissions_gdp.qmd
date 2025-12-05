@@ -17,7 +17,7 @@ editor_options:
 
 # Introduction
 
-Can a country reduce emissions while growing its GDP? This question has gained significant attention in recent years as all countries globally are trying to achieve the economic development with maintaining environmental rsustainability. In this assignment, we examine global power-sector emissions and GDP data from more than 200 countries to explore whether sustained economic growth can occur alongside meaningful emission reductions.
+Can a country reduce emissions while growing its GDP? This question has gained significant attention in recent years as all countries globally are trying to achieve the economic development with maintaining environmental sustainability. In this assignment, we examine global power-sector emissions and GDP data from more than 200 countries to explore whether sustained economic growth can occur alongside meaningful emission reductions.
 
 # Background
 
@@ -75,49 +75,121 @@ In this analysis, we focus specifically on the power sector data, which provides
 
 # Hypotheses Statement
 
-**Question:** Is higher economic growth associated with lower emissions in countries?
+**Question:** Is it possible to achieve emission reductions while maintaining GDP growth?
 
-**H0:** GDP growth is not associated with changes in emissions.
+**H0:** There is no significant relationship between GDP growth and emission reductions.
 
-**HA:** GDP growth is associated with changes in emissions.
+**HA:** There is significant relationship between GDP growth and emission reductions.
+
+# Data Simulation
+
+In this project, we will examine whether it is possible for countries to achieve emission reductions while maintaining GDP growth. To evaluate this relationship, one variable must increase while the other decreases. Additionally, the global emissions and GDP data exhibit clear signs of over dispersion, making the Negative Binomial Model an appropriate choice for analysis.
+
+Before fitting the actual data to the model, we will simulate data to conform the Negative Binomial Model. This will help us understand the model and ensure that it behaves as expected prior to applying it to real world data set.
+
+The statistical notation for the Negative Binomial Model.
+
+$$
+\begin{align}
+\text{BinaryOutcome} &\sim NegativeBinomial(\mu, \theta) \\
+log(\mu) &= \beta_0 + \beta_1 \text{Predictor}
+\end{align}
+\\
+$$
+
+Fit a logistic model like this:
+
+model \<- glm.nb(binary_outcome \~ predictor, data = my_data)
+
+### Set up
 
 ```{r}
-# Load all necessary libraries
+#| output: false
+#| warning: false
+#| message: false
+
+# Load all necessary libraries for data analysis
 library(tidyverse)
-library(dplyr)
 library(janitor)
 library(MASS)
+library(modelsummary)
 ```
 
-
-
-| Variables          | Abbreviation |
-|--------------------|--------------|
-| Economy            | EC           |
-| Emissions Quantity | EM           |
-| Energy use         | EU           |
-| Technology         | T            |
-| Governance         | G            |
-| GDP Growth         | GDP          |
-
+### Set parameters and test model
 
 ```{r}
-#| label: fig-biome
-dag <- dagitty("
-dag {
-  EC -> EQ
-  EC -> EU -> T
-  EC -> GDP
-  EU -> T
-  T -> EQ
-  T -> GDP
-  G -> GDP
-}
-")
+#| label: data-simulation
 
-ggdag(dag, text = TRUE) +
-  theme_void()
+# Set the parameters
+n <- 10000 # Data set size
+beta0 <- 0.6
+beta1 <- 1.8
+r <- 2 # Dispersion
+
+# Uniform distribution between 1 and 10
+x <- runif(n, min = 1, max = 10)
+
+# Calculate mean (mu) using the Negative Binomial link function (log link)
+mu <- exp(beta0 + beta1 * x)
+
+# Simulate the dependent variable (y)
+y <- rnbinom(n = n, mu = mu, size = r)
+
+# Create a data set
+my_data <- data.frame(x, y)
+
+# Fit a negative binomial model
+negbinomial <- glm.nb(y ~ x, data = my_data)
+
 ```
+
+### Visualize the model
+
+```{r}
+library(ggplot2)
+
+# Create predictions from the model
+my_data$prediction <- predict(negbinomial, type = "response")
+
+# Simple scatter plot with fitted line
+ggplot(my_data, aes(x = x, y = y)) +
+  geom_point(alpha = 0.8, size = 0.2, color = "hotpink") +
+  geom_line(aes(y = prediction), color = "darkgreen", linewidth = 1) +
+  labs(title = "Negative Binomial Model",
+       x = "X axis",
+       y = "Y axis") +
+  theme_minimal()
+```
+
+```{css, echo=FALSE}
+.table, th, td {
+  font-size: 0.9em;
+} 
+.table tbody td, .table thead tr {
+    white-space: nowrap;
+}
+```
+
+Let's check the coefficients of this model.
+
+```{r}
+# Summarize the model in a table
+negbinomial_summary <- list ("Negative Binomial" = glm.nb(y ~ x, data = my_data))
+modelsummary(negbinomial_summary)
+
+```
+Here, let's check the dispersion parameter that controls the amount of over dispersion in the data.
+
+```{r}
+# Calculate the dispersion parameter
+estimated_theta <- negbinomial$theta
+print(paste0("Estimated Theta: ", round(estimated_theta, 4)))
+
+```
+
+# GDP and Emissions Data
+
+### Read GDP and emissions data set
 
 ```{r}
 #| output: false
@@ -137,7 +209,7 @@ other_energy <- read_csv(here::here('data', 'power', 'DATA', 'other-energy-use_c
                         na = c(" ", "0", "0.0", "NA")) %>%
   clean_names()
 
-# Read the GDP dataset
+# Read the GDP data set
 gdp <- read_csv(here::here('data', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_280632', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_280632.csv'),
                         na = c(" ", "NA"),
                 skip = 4) %>%
@@ -145,35 +217,34 @@ gdp <- read_csv(here::here('data', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_280632', 'A
 
 ```
 
+### Data wrangling
+
+**Combine and clean power sub sector data for yearly analysis.**
+
 ```{r}
-# Combine three data sets
+# Combine all three sub sector data sets
 power <- bind_rows(electricity, heat_plants, other_energy)
 
-names(power)
-```
+# Make a new column 'year' to segregate according to year
+power_year <- power %>%
+  mutate(year = year(power$start_time))
 
-```{r}
-# Make a new column 'year' to segregate 
-power_annual <- power %>%
-  mutate(year = year(power$start_time)) 
-
-```
-
-```{r}
 # Rename the column and filter year 2025
-power_annual_cleaned <- power_annual %>%
+power_year_cleaned <- power_year %>%
   # Rename the column to match with gdp dataset
   rename(country_code = iso3_country) %>% 
-  # Filter out the year 2025
+  # Filter out the year 2025 (no data of 2025 available for GDP)
   filter(year != 2025)
 
 ```
 
+**Clean and reshape GDP data for further analysis.**
+
 ```{r}
 # Convert data to long format
 gdp_long<- gdp %>%
-  #rename(iso3_country = country_code) %>% 
-  select(-x70, -x1960:-x2014) %>% # Drop 'x70' column and from x1960 to x2014
+  # Drop 'x70' column and columns from x1960 to x2014
+  dplyr::select(-x70, -x1960:-x2014) %>% 
   pivot_longer(cols = starts_with("x"),
                names_to = "year",
                values_to = "gdp_values") %>% 
@@ -183,166 +254,176 @@ gdp_long<- gdp %>%
   year = as.numeric(year))
 ```
 
+**Join power sub sector and GDP data for a streamlined structure and easy analysis.**
+
 ```{r}
 # Join the data frame and reorder the columns
-power_gdp <- power_annual_cleaned %>%
+power_gdp <- power_year_cleaned %>%
   left_join(gdp_long, by = c("country_code", "year")) %>%
   # Filter rows where 'country_name' column is empty
   filter(!is.na(country_name), country_name != "") %>%
   # Reorder the columns by position
-  select(13, 1, 12, everything())
-
-names(power_gdp)
-```
-
-First, look for the top ten countries with the highest emission.
-
-```{r}
-# # Calculate the mean of emissions for 10 years (2015 - 2024)
-# power_gdp_mean <- power_gdp %>%
-#   group_by(country_name) %>%
-#   summarize(mean = mean(emissions_quantity),
-#             .groups = 'drop') %>%
-#   arrange(desc(mean))
-```
-
-```{r}
-# # List top ten countries with highest emission
-# top_ten <- power_gdp_mean$country_name[1:10]
-# 
-# # Select top 10 countries with highest emission
-# top_ten_countries <- power_gdp_mean %>%
-#   filter(country_name %in% top_ten)
+  dplyr::select(13, 1, 12, everything())
 
 ```
 
-
-**Which countries achieved emission reductions while maintaining GDP growth?**
-
-#### Calculate changes in emissions and GDP
+#### Identify ten highest emissions countries
 
 ```{r}
-# Calculate yearly changes in emission and gdp each country
-annual_changes <- power_gdp %>%
-  arrange(country_code, year) %>% 
-  group_by(country_name, subsector) %>% 
-  mutate(
-     # Calculate percentage change from previous year
-    emissions_pct_change = (emissions_quantity - lag(emissions_quantity)) / lag(emissions_quantity) * 100,
-    gdp_pct_change = (gdp_values - lag(gdp_values)) / lag(gdp_values) * 100) %>%
+# Calculate the mean emissions of countries for each year (2015 - 2024)
+power_gdp_mean <- power_gdp %>%
+  drop_na(emissions_quantity) %>%
+  group_by(country_name, year) %>%
+  summarize(mean = mean(emissions_quantity),
+            .groups = 'drop') %>%
+  arrange(desc(mean))
+
+# Top 10 countries by overall mean emissions for all years
+top_10_countries <- power_gdp_mean %>%
+  group_by(country_name) %>%
+  summarize(overall_mean = mean(mean), .groups = 'drop') %>%
+  arrange(desc(overall_mean)) %>%
+  slice_head(n = 10)
+
+# Filter to keep only top 10 countries
+power_gdp_mean_top10 <- power_gdp_mean %>%
+  filter(country_name %in% top_10_countries$country_name)
+
+```
+
+**Visualize the top ten highest emitting countries.**
+
+```{r}
+ ggplot(power_gdp_mean_top10, aes(x = year, y = mean, color = country_name)) +
+  geom_line() +
+  scale_x_continuous(breaks = seq(2015, 2024, by = 1)) +
+  scale_y_continuous(labels = scales::label_number(scale = 1e-6, suffix = "M t")) +
+  labs(x = "Year",
+       y = "CO2 emission per metric tonnes",
+       title = "Top ten highest emitting countries from 2015 to 2024",
+       color = "Country") +
+  theme_classic()
+```
+#### Calculate GDP and emissions changes 
+
+```{r}
+# Aggregate GDP and emissions by country and year
+country_totals <- power_gdp %>%
+  group_by(country_name, country_code, subsector, year) %>%
+  summarize(total_emissions = sum(emissions_quantity, na.rm = TRUE),
+            gdp_values = first(gdp_values),
+            .groups = 'drop')
+
+# Calculate annual changes in GDP and emissions
+annual_changes <- country_totals %>%
+  arrange(country_code, year) %>%
+  group_by(country_name, country_code) %>%
+  mutate(emissions_pct_change = (total_emissions - lag(total_emissions)) / lag(total_emissions) * 100,
+         gdp_pct_change = (gdp_values - lag(gdp_values)) / lag(gdp_values) * 100) %>%
   ungroup()
 ```
 
-#### Identify countries with increased GDP and decreased emissions
+### Identify countries with increased GDP and decreased emissions
 
 ```{r}
-# Find years where countries reduced emissions while growing GDP
-decoupling_years <- annual_changes %>%
-  filter(!is.na(emissions_pct_change < 0)) %>% 
-  # filter(emissions_pct_change < 0, # Emissions decreased
-         # gdp_pct_change > 0) %>% # GDP increased
-  select(country_code, country_name, year, 
-         emissions_pct_change, gdp_pct_change,
-         emissions_quantity, gdp_values)
+# Find the cases where emissions decreased while GDP increased
+decoupling <- annual_changes %>%
+  filter(emissions_pct_change < 0 & gdp_pct_change > 0) %>%
+  dplyr::select(country_name, subsector, year, emissions_pct_change, gdp_pct_change)
 
-# Count how many times each country achieved this
-decoupling_summary <- decoupling_years %>%
-  drop_na(emissions_pct_change, gdp_pct_change) %>% 
-  group_by(country_code, country_name) %>%
-  summarise(years_of_decoupling = sum(emissions_pct_change < 0 & gdp_pct_change > 0),
+# Find countries where emissions decreased while GDP increased
+decoupling_case <- decoupling %>%
+  group_by(country_name) %>%
+  summarize(decoupling_years = n(),
             avg_emission_reduction = mean(emissions_pct_change),
-            log_emission_change = log(avg_emission_reduction),
             avg_gdp_growth = mean(gdp_pct_change),
             .groups = 'drop') %>%
-  arrange(desc(years_of_decoupling))
+  arrange(desc(decoupling_years))
 
-ggplot(decoupling_summary, aes(x = log_emission_change, y = years_of_decoupling, color = avg_gdp_growth)) +
-  geom_point()
-
-# decoupling_summary <- decoupling_years %>%
-#   group_by(country_code, country_name) %>%
-#   summarise(years_of_decoupling = n(),
-#             avg_emission_reduction = mean(emissions_pct_change),
-#             avg_gdp_growth = mean(gdp_pct_change),
-#             .groups = 'drop') %>%
-#   arrange(desc(years_of_decoupling))
-
+# View results
+print(decoupling_case)
 ```
+
+#### Visualize top ten countries with decoupling effects
 
 ```{r}
-# Countries with at least 1 years of decoupling
-decoupling_summary %>%
-  ggplot(aes(x = log_emission_change, y = years_of_decoupling, color = avg_gdp_growth)) +
-  geom_point(aes(size = years_of_decoupling, color = years_of_decoupling), alpha = 0.8) +
-  geom_text(aes(label = country_code), vjust = -1, size = 1, check_overlap = TRUE) +
-  scale_color_gradient(low = "hotpink", high = "darkgreen") +
-  scale_size_continuous(range = c(3, 8)) +
-  labs(
-    title = "Countries with 1+ years of decoupling",
-    subtitle = "Bubble size = Number of years achieving decoupling",
-    x = "Average GDP growth (%)",
-    y = "Average emission reduction (%)",
-    size = "Years of\ndecoupling",
-    color = "Years of\ndecoupling") +
-  theme_minimal(base_size = 10) +
-  theme(plot.title = element_text(face = "bold"),
-        legend.position = "right")
+# Filter the top ten countries with decoupling effects
+decoup_ten <- decoupling_case %>%
+  arrange(desc(decoupling_years)) %>%
+  slice_head(n = 10)
+
+# Plot a graph for top ten countries
+ggplot(decoup_ten, aes(x = reorder(country_name, decoupling_years), 
+                       y = decoupling_years)) +
+  geom_col(fill = "darkolivegreen4") +
+  geom_text(aes(label = decoupling_years), hjust = -0.3, size = 3.5) +
+  coord_flip() +
+  theme_classic() +
+  labs(x = "Top ten countries",
+    y = "Number of years with decoupling",
+    title = "Top 10 countries: Years of emission reduction while increasing GDP") +
+  ylim(0, max(decoup_ten$decoupling_years) * 1.1)
 
 ```
-
-Negative Binomial Model, Statistical Model
-
-$$
-\begin{align}
-\text{BinaryOutcome} &\sim NegativeBinomial(\mu, \theta) \\
-log(\mu) &= \beta_0 + \beta_1 \text{Predictor}
-\end{align}
-\\
-$$
-
-fit a logistic model like this:
-
-model <- glm.nb(binary_outcome ~ predictor, data = my_data)
-                     
-```{r}
-model <- glm.nb(years_of_decoupling ~ avg_gdp_growth + avg_emission_reduction,
-                   data = decoupling_summary)
-```
+### Fit GDP and emissions data into a model
 
 ```{r}
-# Predict model
-model_prediction <- decoupling_summary %>% 
-  mutate(prediction = predict(object = model,
-                     newdata = decoupling_summary,
-                     type = 'response'))
+# Fit the model
+nb_model <- glm.nb(decoupling_years ~ avg_gdp_growth + avg_emission_reduction,
+                data = decoupling_case)
+
 ```
 
-
-
-# Create predictions for your existing data
-#decoupling_summary$predicted <- predict(model, type = "response")
+#### Create prediction data for GDP and emissions
 
 ```{r}
-# Plot observed vs predicted
-ggplot(model_prediction, aes(x = avg_gdp_growth, y = prediction, color = log_emission_change)) +
-  geom_point() +
-  geom_abline(color = "red", size = 0.5) +
-  labs(title = "Predicted model",
-       x = "Average GDP growth",
-       y = "Prediction") +
-  theme_minimal()
+# Predictions for GDP growth (holding emission reduction constant)
+pred_gdp <- decoupling_case %>%
+  mutate(avg_emission_reduction = mean(decoupling_case$avg_emission_reduction),
+         variable = "GDP growth") %>%
+  mutate(pred = predict(nb_model, newdata = .))
+
+# Predictions for emission reduction (holding GDP growth constant)
+pred_emission <- decoupling_case %>%
+  mutate(avg_gdp_growth = mean(decoupling_case$avg_gdp_growth),
+         variable = "Emission Reduction") %>%
+  mutate(pred = predict(nb_model, newdata = .))
+
+# Combine predictions for GDP and emissions
+pred_combined <- bind_rows(pred_gdp, pred_emission)
+
 ```
 
-# geom_abline(slope = 1, intercept = 0, color = "red", size = 1) 
+#### Visualize the model prediction
 
 ```{r}
-# Plot observed vs predicted
-ggplot(model_prediction, aes(x = log_emission_change, y = prediction, color = avg_gdp_growth)) +
-  geom_point(color = "hotpink") +
-  geom_abline(color = "hotpink", size = 0.5) +
-  labs(title = "Predicted model",
-       x = "Log emission growth",
-       y = "Prediction") +
-  theme_minimal()
+# Plot the GDP and emissions
+ggplot() +
+  geom_point(data = decoupling_case, 
+             aes(x = avg_gdp_growth, y = decoupling_years, shape = "GDP growth"),
+             size = 3, alpha = 0.7, color = "hotpink") +
+  geom_point(data = decoupling_case, 
+             aes(x = avg_emission_reduction, y = decoupling_years, shape = "Emissions reduction"), size = 3, alpha = 0.7, color = "darkgreen") +
+  geom_line(data = pred_gdp,
+            aes(x = avg_gdp_growth, y = pred, color = "GDP growth"),
+            linewidth = 0.8) +
+  geom_line(data = pred_emission,
+            aes(x = avg_emission_reduction, y = pred, color = "Emissions reduction"),
+            linewidth = 0.8) +
+  scale_color_manual(values = c("GDP growth" = "hotpink",
+                                "Emissions reduction" = "darkgreen"),
+                     name = "Predictor") +
+  scale_shape_manual(values = c("GDP growth" = 12, "Emissions reduction" = 12),
+                     name = "Predictor") +
+  theme_classic() +
+  theme(legend.position = "right",
+        plot.title = element_text(face = "bold", size = 14)) +
+  labs(x = "Predictor value (%)",
+       y = "Decoupling years",
+       title = "A decade of decoupling: Rising GDP and Declining Emissions",
+    subtitle = "Line shows model predictions & Shape shows actual observations")
+
 ```
+
+
 
