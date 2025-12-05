@@ -17,7 +17,7 @@ Potential questions for the final project
 2.	Do countries with similar GDP levels show similar or different sub-sector emission trends?
 3.	When emissions reduce in one sector, do they increase in other sub-sectors?
 
-This dataset provides annual country-level emissions from year 2015 to 2024, disaggregated by 'power' subsector. The data was derived from Climate Trace (<https://climatetrace.org/data>). 
+This dataset provides annual country-level emissions from year 2015 to 2024, disaggregated by 'power' subsector. The data was derived from Climate Trace (<https://climatetrace.org/data>).
 
 ```{r}
 # Load all necessary libraries
@@ -48,6 +48,8 @@ gdp <- read_csv(here::here('data', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_280632', 'A
   clean_names()
 
 ```
+
+
 ```{r}
 # Combine three data sets
 power <- bind_rows(electricity, heat_plants, other_energy)
@@ -56,27 +58,17 @@ power <- bind_rows(electricity, heat_plants, other_energy)
 print(power)
 ```
 
-
 ```{r}
-# Renaming column the name of country column
-
-#df_rename <- df %>%
-  #rename(country = iso3_country )
-```
-
-```{r}
-power$start_time <- as.Date(power$start_time)
-class(power$start_time)
-
+# power$start_time <- as.Date(power$start_time)
+# class(power$start_time)
 ```
 
 ```{r}
 power_annual <- power %>%
   mutate(year = year(power$start_time)) 
 
-class(power_annual$year)
-
 ```
+
 ```{r}
 # Rename the column and filter year 2025
 power_annual_cleaned <- power_annual %>%
@@ -87,10 +79,10 @@ power_annual_cleaned <- power_annual %>%
 
 ```
 
-
 ```{r}
 # Convert data to long format
 gdp_long<- gdp %>%
+  #rename(iso3_country = country_code) %>% 
   select(-x70, -x1960:-x2014) %>% # Drop 'x70' column and from x1960 to x2014
   pivot_longer(cols = starts_with("x"),
                names_to = "year",
@@ -104,38 +96,38 @@ gdp_long<- gdp %>%
 ```{r}
 # Join the data frame and reorder the columns
 power_gdp <- power_annual_cleaned %>%
-  left_join(gdp_long, by = c("country_code", "year")) %>% 
+  left_join(gdp_long, by = c("country_code", "year")) %>%
+  # Filter rows where 'country_name' column is empty
+  filter(!is.na(country_name), country_name != "") %>%
   # Reorder the columns by position
   select(13, 1, 12, everything())
-
 ```
 
+First, look for the top ten countries with the highest emission.
 
 ```{r}
-# power_mean <- power_annual %>%
-#   group_by(iso3_country) %>% 
-#   summarize(mean = mean(emissions_quantity)) %>% 
-#   arrange(desc(mean))
-```
-
-```{r}
-# # Top 10 countries for emission
-# #top_ten <- list(df_mean$country[1:10])
-# #class(top_ten)
-# 
-# top_ten <- df_mean$country[1:10]
-
+# Calculate the mean of emissions for 10 years (2015 - 2024)
+power_gdp_mean <- power_gdp %>%
+  group_by(country_name) %>%
+  summarize(mean = mean(emissions_quantity),
+            .groups = 'drop') %>%
+  arrange(desc(mean))
 ```
 
 ```{r}
-# top_countries <- df_year %>%
-#   filter(country %in% top_ten)
-  
+# List top ten countries with highest emission
+top_ten <- power_gdp_mean$country_name[1:10]
+
+# Select top 10 countries with highest emission
+top_ten_countries <- power_gdp_mean %>%
+  filter(country_name %in% top_ten)
+
 ```
 
 ```{r}
-# plot <- ggplot(top_countries, aes(x = start_time, y = emissions_quantity, color = country)) +
-#                geom_line() +
+# # Visualize the top ten countries
+# ggplot(top_ten_countries, aes(x = year, y = mean, color = country_name)) +
+#   geom_line() +
 #   theme_classic() +
 #   scale_x_date(
 #     date_breaks = 'years',
@@ -147,15 +139,222 @@ power_gdp <- power_annual_cleaned %>%
 #        y = "CO2 emission per metric tonnes",
 #        title = "Annual top 10 carbon emitting countries from 2015 to 2024
 #        by road transportation subsector")
-# 
-# plot
+
+```
+
+
+
+**Which countries achieved emission reductions while maintaining GDP growth?**
+
+#### Calculate changes in emissions and GDP
+
+```{r}
+# Calculate yearly changes in emission and gdp each country
+country_changes <- power_gdp %>%
+  arrange(country_code, year) %>%
+  group_by(country_code) %>%
+  mutate(
+    # Calculate percentage change from previous year
+    emissions_pct_change = (emissions_quantity - lag(emissions_quantity)) / lag(emissions_quantity) * 100,
+    gdp_pct_change = (gdp_values - lag(gdp_values)) / lag(gdp_values) * 100) %>%
+  ungroup()
+
+```
+
+#### Identify countries with increased GDP and decreased emissions
+
+```{r}
+# Find years where countries reduced emissions while growing GDP
+decoupling_years <- country_changes %>%
+  filter(emissions_pct_change < 0, # Emissions decreased
+         gdp_pct_change > 0) %>% # GDP increased
+  select(country_code, country_name, year, 
+         emissions_pct_change, gdp_pct_change,
+         emissions_quantity, gdp_values)
+
+# Count how many times each country achieved this
+decoupling_summary <- decoupling_years %>%
+  group_by(country_code, country_name) %>%
+  summarise(years_of_decoupling = n(),
+            avg_emission_reduction = mean(emissions_pct_change),
+            avg_gdp_growth = mean(gdp_pct_change),
+            .groups = 'drop') %>%
+  arrange(desc(years_of_decoupling))
+
+```
+
+
+```{r}
+# How many rows for 2015 and 2024?
+power_gdp %>%
+  filter(year %in% c(2015, 2024)) %>%
+  count(year)
+
+```
+
+
+```{r}
+# How many unique countries in those years?
+power_gdp %>%
+  filter(year %in% c(2015, 2024)) %>%
+  distinct(country_code, year) %>%
+  count(country_code) %>%
+  count(n)
+```
+```{r}
+# Countries with at least 1 years of decoupling
+decoupling_summary %>%
+  filter(years_of_decoupling >= 1) %>%
+  ggplot(aes(x = avg_gdp_growth, y = avg_emission_reduction)) +
+  geom_point(aes(size = years_of_decoupling, color = years_of_decoupling), alpha = 0.8) +
+  geom_text(aes(label = country_code), vjust = -1, size = 2, check_overlap = TRUE) +
+  scale_color_gradient(low = "hotpink", high = "darkgreen") +
+  scale_size_continuous(range = c(3, 8)) +
+  labs(
+    title = "Countries with 1+ years of decoupling",
+    subtitle = "Bubble size = Number of years achieving decoupling",
+    x = "Average GDP growth (%)",
+    y = "Average emission reduction (%)",
+    size = "Years of\ndecoupling",
+    color = "Years of\ndecoupling") +
+  theme_minimal(base_size = 10) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right")
+
+```
+
+
+#### Analyze the trends from 2015 to 2024
+
+```{r}
+all_changes_countries <- power_gdp %>%
+  filter(year %in% c(2015, 2024)) %>%
+  # Remove rows with missing data BEFORE filtering
+  filter(!is.na(emissions_quantity) & !is.na(gdp_values)) %>%
+  arrange(country_code, year) %>%
+  group_by(country_code) %>%
+  filter(n() == 2) %>%  # Only countries with both years
+  summarise(
+    country_name = first(country_name),
+    emissions_2015 = first(emissions_quantity),
+    emissions_2024 = last(emissions_quantity),
+    gdp_2015 = first(gdp_values),
+    gdp_2024 = last(gdp_values),
+    .groups = 'drop'
+  ) %>%
+  mutate(
+    total_emission_change_pct = ((emissions_2024 - emissions_2015) / emissions_2015) * 100,
+    total_gdp_change_pct = ((gdp_2024 - gdp_2015) / gdp_2015) * 100,
+    achieved_decoupling = total_emission_change_pct < 0 & total_gdp_change_pct > 0
+  )
+
+# Check how many countries you get
+nrow(all_changes_countries)
 ```
 
 ```{r}
+# View the countries that achieved decoupling
+successful_countries <- all_changes_countries %>%
+  filter(achieved_decoupling == TRUE) %>%
+  arrange(desc(total_gdp_change_pct))
 
-# ggsave("carbon-emission.png", width = 6, height = 4)
+print(successful_countries)
+
+# Summary statistics
+all_changes_countries %>%
+  summarise(
+    total_countries = n(),
+    countries_with_decoupling = sum(achieved_decoupling),
+    pct_decoupling = mean(achieved_decoupling) * 100,
+    avg_emission_change = mean(total_emission_change_pct),
+    avg_gdp_change = mean(total_gdp_change_pct)
+  )
+
+# View all 22 countries
+View(all_changes_countries)
+```
+```{r}
+library(ggplot2)
+
+# Scatter plot with quadrants
+ggplot(all_changes_countries, aes(x = total_gdp_change_pct, y = total_emission_change_pct)) +
+  geom_point(aes(color = achieved_decoupling), size = 4, alpha = 0.7) +
+  geom_text(aes(label = country_code), vjust = -0.8, size = 3, check_overlap = TRUE) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.8) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.8) +
+  scale_color_manual(
+    values = c("FALSE" = "coral2", "TRUE" = "forestgreen"),
+    labels = c("No Decoupling", "Decoupling Achieved")
+  ) +
+  labs(
+    title = "Emission vs GDP Change (2015-2024)",
+    subtitle = "Countries in green achieved emission reductions while maintaining GDP growth",
+    x = "GDP Change (%)",
+    y = "Emissions Change (%)",
+    color = ""
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank()
+  )
 ```
 
 ```{r}
-# This graph represents the annual top 10 carbon emitting countries by road transportation subsector from 2015 to 2024. The graph shows that the US is the most carbon emitting country, followed by China and Japan.
+library(tidyr)
+
+# Reshape data for grouped bar chart
+all_changes_long <- all_changes_countries %>%
+  select(country_code, country_name, total_emission_change_pct, total_gdp_change_pct) %>%
+  pivot_longer(
+    cols = c(total_emission_change_pct, total_gdp_change_pct),
+    names_to = "metric",
+    values_to = "percent_change"
+  ) %>%
+  mutate(
+    metric = recode(metric,
+                    "total_emission_change_pct" = "Emissions",
+                    "total_gdp_change_pct" = "GDP")
+  )
+
+# Plot top 12 countries by GDP growth
+top_countries <- all_changes_countries %>%
+  arrange(desc(total_gdp_change_pct)) %>%
+  head(12) %>%
+  pull(country_code)
+
+all_changes_long %>%
+  filter(country_code %in% top_countries) %>%
+  ggplot(aes(x = reorder(country_code, -percent_change), y = percent_change, fill = metric)) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
+  scale_fill_manual(values = c("Emissions" = "#E74C3C", "GDP" = "#3498DB")) +
+  labs(
+    title = "Emissions vs GDP Change: Top 12 Countries by GDP Growth",
+    subtitle = "Comparing emission and GDP changes (2015-2024)",
+    x = "Country Code",
+    y = "Percent Change (%)",
+    fill = "Metric"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
 ```
+
+```{r}
+# Show me your data structure
+str(power_gdp)
+```
+
+```{r}
+unique(power_gdp$subsector)
+```
+
+Gamma model is positive.
+
+The emissions have reduction.
+
