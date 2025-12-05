@@ -1,18 +1,20 @@
 ---
-title: "Global emissions from power subsector vs GDP"
-author: "Aakriti Poudel"
+title: "Global Emissions and GDP"
+description: "Exploring the decoupling effects accross countries"
+author:
+  - name: Aakriti Poudel
+    url: https://aakriti-poudel-chhetri.github.io/
+date: 2025-12-03
 format:
   html:
-    code-fold: show
+    code-fold: true
     embed-resources: true
-execute:
-  echo: true
-  warning: false
-  message: false
-  error: false
-editor: source
-editor_options: 
-  chunk_output_type: inline
+citation: 
+  url: https://aakriti-poudel-chhetri.github.io/posts/2025-12-global-emissions-gdp/
+categories: [MEDS, R, environment modeling, statistics, data science]
+image: eaton-palisades-fires.png
+draft: false
+#bibliography: references.bib
 ---
 
 # Introduction
@@ -40,6 +42,7 @@ The following DAG describes the key relationships between emissions and GDP. It 
 #| label: Directed Acyclic Graph (DAG)
 #| echo: false
 
+library(tidyverse)
 library(dagitty)
 library(ggdag)
 
@@ -55,8 +58,7 @@ dag {
 }
 ")
 
-ggdag(dag, text = TRUE) +
-  theme_void()
+ggdag(dag, text = TRUE) + theme_void()
 ```
 
 # Data Description
