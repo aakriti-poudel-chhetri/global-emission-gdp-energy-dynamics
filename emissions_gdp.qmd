@@ -60,7 +60,6 @@ dag {
 
 ggdag(dag, text = TRUE) + theme_void()
 ```
-
 # Data Description
 
 Here, we will work with the following data sets:
@@ -77,11 +76,11 @@ In this analysis, we focus specifically on the power sector data, which provides
 
 # Hypotheses Statement
 
-**Question:** Is it possible to achieve emission reductions while maintaining GDP growth?
+**Question:** To what extent GDP and global emissions account for the number of years countries achieve by decoupling between economic growth and emissions?
 
-**H0:** There is no significant relationship between GDP growth and emission reductions.
+**H0:** There is no significant relationship between the GDP and global emissions, and the number of decoupling years.
 
-**HA:** There is significant relationship between GDP growth and emission reductions.
+**HA:** There is no significant relationship between the GDP and global emissions, and the number of decoupling years.
 
 # Data Simulation
 
