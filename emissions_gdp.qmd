@@ -38,13 +38,29 @@ The following DAG describes the key relationships between emissions and GDP. It 
 | Governance         | G            |
 | GDP Growth         | GDP          |
 
-```{r}
-#| label: Directed Acyclic Graph (DAG)
-#| echo: false
+First, let's load all the required libraries.
 
+## Set up
+
+```{r}
+#| output: false
+#| warning: false
+#| message: false
+
+# Load libraries
 library(tidyverse)
 library(dagitty)
 library(ggdag)
+library(janitor)
+library(MASS)
+library(modelsummary)
+library(kableExtra)
+library(knitr)
+```
+
+```{r}
+#| label: Directed Acyclic Graph (DAG)
+#| echo: false
 
 dag <- dagitty("
 dag {
@@ -92,7 +108,7 @@ The statistical notation for the Negative Binomial Model.
 
 $$
 \begin{align}
-\text{BinaryOutcome} &\sim NegativeBinomial(\mu, \theta) \\
+\text{CountOutcome} &\sim NegativeBinomial(\mu, \theta) \\
 log(\mu) &= \beta_0 + \beta_1 \text{Predictor}
 \end{align}
 \\
@@ -101,20 +117,6 @@ $$
 Fit a logistic model like this:
 
 model \<- glm.nb(binary_outcome \~ predictor, data = my_data)
-
-### Set up
-
-```{r}
-#| output: false
-#| warning: false
-#| message: false
-
-# Load all necessary libraries for data analysis
-library(tidyverse)
-library(janitor)
-library(MASS)
-library(modelsummary)
-```
 
 ### Set parameters and test model
 
@@ -310,7 +312,7 @@ power_gdp_mean_top10 <- power_gdp_mean %>%
 ```{r}
 # Aggregate GDP and emissions by country and year
 country_totals <- power_gdp %>%
-  group_by(country_name, country_code, subsector, year) %>%
+  group_by(country_name, country_code, year) %>%
   summarize(total_emissions = sum(emissions_quantity, na.rm = TRUE),
             gdp_values = first(gdp_values),
             .groups = 'drop')
@@ -330,7 +332,7 @@ annual_changes <- country_totals %>%
 # Find the cases where emissions decreased while GDP increased
 decoupling <- annual_changes %>%
   filter(emissions_pct_change < 0 & gdp_pct_change > 0) %>%
-  dplyr::select(country_name, subsector, year, emissions_pct_change, gdp_pct_change)
+  dplyr::select(country_name, year, emissions_pct_change, gdp_pct_change)
 
 # Find countries where emissions decreased while GDP increased
 decoupling_case <- decoupling %>%
@@ -362,69 +364,134 @@ ggplot(decoup_ten, aes(x = reorder(country_name, decoupling_years),
   theme_classic() +
   labs(x = "Top ten countries",
     y = "Number of years with decoupling",
-    title = "Top 10 countries: Years of emission reduction while increasing GDP") +
+    title = "Top 10 countries: Years of emission reduction\n while increasing GDP") +
   ylim(0, max(decoup_ten$decoupling_years) * 1.1)
 
 ```
 ### Fit GDP and emissions data into a model
 
+For our regression analysis, our statistical notation is following
+
+$$
+\begin{align}
+\text{decoupling_years} &\sim NegativeBinomial(\mu, \theta) \\
+log(\mu) &= \beta_0 + \beta_1 \text{avg_emission_reduction} + \beta_2 \text{avg_gdp_growth}
+\end{align}
+\\
+$$
+
+Now, let's fit our decoupling case in the negative binomial model:
+
 ```{r}
+#| output: false
+#| warning: false
+#| message: false
+
 # Fit the model
 nb_model <- glm.nb(decoupling_years ~ avg_gdp_growth + avg_emission_reduction,
                 data = decoupling_case)
 
 ```
 
+Let's extract the model coefficient and convert them into tabular form
+
+```{r}
+# Extract coefficient summary
+coef_table <- coef(summary(nb_model))
+
+# Create a clean data frame
+results_table <- data.frame(
+  Predictor = c("Intercept", "Average GDP Growth", "Average Emission Reduction"),
+  Estimate = coef_table[, "Estimate"],
+  SE = coef_table[, "Std. Error"],
+  `z value` = coef_table[, "z value"],
+  `p value` = coef_table[, "Pr(>|z|)"]
+)
+
+# Create pretty table
+kable(results_table, 
+      digits = 4,
+      col.names = c("Predictor", "Estimate (β)", "Std. Error", "z-value", "p-value"),
+      caption = "Negative Binomial Regression Results: Predictors of Decoupling Years",
+      align = c("l", "r", "r", "r", "r")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE,
+                position = "center") %>%
+  row_spec(0, bold = TRUE, background = "#f0f0f0") %>%
+  footnote(general = "Note: Dependent variable is the count of years achieving decoupling (2015-2024).",
+           general_title = "",
+           footnote_as_chunk = TRUE)
+```
+
+theta dispersion parameter chahincha, add here
+
+```{r}
+# Extract theta and standard error
+theta_value <- nb_model$theta
+theta_value
+theta_se <- attr(nb_model$theta, "SE")
+theta_se
+
+```
+
 #### Create prediction data for GDP and emissions
 
 ```{r}
-# Predictions for GDP growth (holding emission reduction constant)
-pred_gdp <- decoupling_case %>%
-  mutate(avg_emission_reduction = mean(decoupling_case$avg_emission_reduction),
-         variable = "GDP growth") %>%
-  mutate(pred = predict(nb_model, newdata = .))
+# Create a prediction grid
+prediction_grid <- expand_grid(
+  avg_gdp_growth = seq(min(decoupling_case$avg_gdp_growth),
+                       max(decoupling_case$avg_gdp_growth),
+                       length.out = 50),
+  avg_emission_reduction = median(decoupling_case$avg_emission_reduction))
 
-# Predictions for emission reduction (holding GDP growth constant)
-pred_emission <- decoupling_case %>%
-  mutate(avg_gdp_growth = mean(decoupling_case$avg_gdp_growth),
-         variable = "Emission Reduction") %>%
-  mutate(pred = predict(nb_model, newdata = .))
+# Generate predictions and standard errors
+prediction_se <- predict(nb_model, 
+                     newdata = prediction_grid, 
+                     type = "link", 
+                     se.fit = TRUE)
 
-# Combine predictions for GDP and emissions
-pred_combined <- bind_rows(pred_gdp, pred_emission)
-
+# Generate confidence intervals
+prediction_ci <- prediction_grid %>%
+  mutate(log_mu = prediction_se$fit,
+         log_mu_se = prediction_se$se.fit,
+    # Calculate 95% CI on link scale using ±1.96 SE
+    log_mu_lwr = log_mu - 1.96 * log_mu_se,
+    log_mu_upr = log_mu + 1.96 * log_mu_se,
+    # Transform from link scale (log) to response scale (counts)
+    mu = exp(log_mu), 
+    mu_lwr = exp(log_mu_lwr),
+    mu_upr = exp(log_mu_upr))
 ```
+
+Note: let's create a factor for emissions level for visualization. First we will create a categorical variable `emission' that labels the three different emission reduction levels in the prediction grid. It will  convert the numeric emission reduction values into meaningful text labels.
 
 #### Visualize the model prediction
 
 ```{r}
-# Plot the GDP and emissions
+# Plot with single ribbon
 ggplot() +
+  # Add the 95% CI ribbon
+  geom_ribbon(data = prediction_ci, 
+              aes(x = avg_gdp_growth, ymin = mu_lwr, ymax = mu_upr), 
+              fill = 'skyblue', alpha = 0.2) +
+  # Plot the prediction line
+  geom_line(data = prediction_ci, 
+            aes(x = avg_gdp_growth, y = mu), 
+            color = 'hotpink', linewidth = 1) +
+  # Plot the observed decoupling cases
   geom_point(data = decoupling_case, 
-             aes(x = avg_gdp_growth, y = decoupling_years, shape = "GDP growth"),
-             size = 3, alpha = 0.7, color = "hotpink") +
-  geom_point(data = decoupling_case, 
-             aes(x = avg_emission_reduction, y = decoupling_years, shape = "Emissions reduction"), size = 3, alpha = 0.7, color = "darkgreen") +
-  geom_line(data = pred_gdp,
-            aes(x = avg_gdp_growth, y = pred, color = "GDP growth"),
-            linewidth = 0.8) +
-  geom_line(data = pred_emission,
-            aes(x = avg_emission_reduction, y = pred, color = "Emissions reduction"),
-            linewidth = 0.8) +
-  scale_color_manual(values = c("GDP growth" = "hotpink",
-                                "Emissions reduction" = "darkgreen"),
-                     name = "Predictor") +
-  scale_shape_manual(values = c("GDP growth" = 12, "Emissions reduction" = 12),
-                     name = "Predictor") +
-  theme_classic() +
-  theme(legend.position = "right",
-        plot.title = element_text(face = "bold", size = 14)) +
-  labs(x = "Predictor value (%)",
-       y = "Decoupling years",
-       title = "A decade of decoupling: Rising GDP and Declining Emissions",
-    subtitle = "Line shows model predictions & Shape shows actual observations")
-
+             aes(x = avg_gdp_growth, y = decoupling_years),
+             color = 'darkgreen', alpha = 0.8, size = 0.4) +
+  labs(title = 'Cases of decoupling: Rising GDP and declining emissions',
+       subtitle = 'Shaded area shows 95% CI at median emission reduction',
+       x = 'Average GDP growth (%)',
+       y = 'Expected number of decoupling years') +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = 'bold'),
+        plot.subtitle = element_text(hjust = 0.5))
 ```
+
+
 
 
 
