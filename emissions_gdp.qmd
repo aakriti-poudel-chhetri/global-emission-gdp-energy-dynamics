@@ -61,6 +61,7 @@ The following DAG describes the key relationships between emissions and GDP. It 
 
 ```{r}
 #| label: Directed Acyclic Graph (DAG)
+#| fig-cap: "Directed Acyclic Graph (DAG)"
 #| echo: false
 
 dag <- dagitty("
