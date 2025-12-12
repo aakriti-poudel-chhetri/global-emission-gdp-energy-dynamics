@@ -25,22 +25,9 @@ Can a country reduce emissions while growing its GDP? This question has gained s
 
 Economic growth and greenhouse gas emissions have traditionally been closely linked. The increase in GDP is often accompanied by higher emissions rate due to higher energy consumption, increasing industrial activities and infrastructure growth. However, the recent trend shows that some countries are beginning to break this pattern. By analyzing emissions alongside GDP, we can identify which countries are achieving ‘decoupling’ where economic growth increases without a corresponding rise in emissions. This decoupling can be a result of combination of multiple factors such as clean energy, improvements in energy efficiency, technological innovation and effective climate policies. The study of these trends provides valuable insights into how countries can pursue sustainable development, balancing economic progress with environmental responsibility. It can serve as a guide for other nations who are aiming to reduce their carbon footprint while maintaining their economic growth.
 
-# Directed Acyclic Graph (DAG)
-
-The following DAG describes the key relationships between emissions and GDP. It shows how the Economy (EC), Energy use (EU), Technology (T) and Governance (G) interact to shape both Emissions quantity (EQ) and GDP. The economy influences energy use, technological development, emissions and GDP. Energy use also contributes to technological change, which then affects both emissions and GDP. Governance has a direct impact on GDP as well. Overall, the DAG highlights the direct and indirect connections among these variables and helps identify which variable need to be controlled in the analysis to reduce confounding and selection bias.
-
-| Variables          | Abbreviation |
-|--------------------|--------------|
-| Economy            | EC           |
-| Emissions Quantity | EM           |
-| Energy use         | EU           |
-| Technology         | T            |
-| Governance         | G            |
-| GDP Growth         | GDP          |
+# Set Up
 
 First, let's load all the required libraries.
-
-## Set up
 
 ```{r}
 #| output: false
@@ -56,7 +43,21 @@ library(MASS)
 library(modelsummary)
 library(kableExtra)
 library(knitr)
+library(scales)
 ```
+
+# Directed Acyclic Graph (DAG)
+
+The following DAG describes the key relationships between emissions and GDP. It shows how the Economy (EC), Energy use (EU) and Technology (T) interact to shape both Emissions quantity (EQ), GDP growth (GDP) and Decoupling year (DY) . The economy influences energy use, technological development and emissions. Energy use also contributes to technological change, which then affects both emissions and GDP. The decoupling is both affected by the emissions and GDP. Overall, the DAG highlights the **direct and indirect connections** among these variables and helps identify which variable need to be controlled in the analysis to reduce confounding and selection bias.
+
+| Variables          | Abbreviation |
+|--------------------|--------------|
+| Economy            | EC           |
+| Emissions Quantity | EQ           |
+| Energy Use         | EU           |
+| Technology         | T            |
+| Decoupling Year    | DY           |
+| GDP Growth         | GDP          |
 
 ```{r}
 #| label: Directed Acyclic Graph (DAG)
@@ -64,27 +65,28 @@ library(knitr)
 
 dag <- dagitty("
 dag {
-  EC -> EQ
+  EC -> EQ -> DY
   EC -> EU -> T
-  EC -> GDP
+  EC -> GDP -> DY
   EU -> T
-  T -> EQ
-  T -> GDP
-  G -> GDP
+  EU -> EQ
+  T -> EQ -> DY
+  T -> GDP -> DY
 }
 ")
 
 ggdag(dag, text = TRUE) + theme_void()
 ```
+
 # Data Description
 
 Here, we will work with the following data sets:
 
-**GDP data**
+## GDP data
 
 The data set comes from the [World Bank](https://data.worldbank.org/indicator/NY.GDP.MKTP.CD?locations=1W) and uses the indicator NY.GDP.MKTP.CD, which reports national gross domestic product (GDP) in current U.S. dollars. It measures the total value of all goods and services produced in a country in a given year, converted into U.S. dollars using that year’s official exchange rate. As it is a ‘current’ GDP, the values reflect the prices and exchange rates of the respective year, not adjusted for inflation or purchasing-power differences.
 
-**Global emissions data**
+## Global emissions data
 
 This data set is retrieved from [Climate TRACE](https://climatetrace.org/data). It provides a detailed, open-access global inventory of greenhouse gas and air pollution emissions. It aggregates data from hundreds of millions of emission sources worldwide including power plants, industrial facilities, transportation, agriculture, and more, allowing emissions to be broken down by country, sector, sub-sector and time period. The data cover emissions over multiple years, starting from 2015 for annual country-level data, and with monthly and source level records available since 2021 .
 
@@ -94,9 +96,9 @@ In this analysis, we focus specifically on the power sector data, which provides
 
 **Question:** To what extent GDP and global emissions account for the number of years countries achieve by decoupling between economic growth and emissions?
 
-**H0:** There is no significant relationship between the GDP and global emissions, and the number of decoupling years.
+**Null Hypothesis (H0):** There is no significant relationship between the GDP and global emissions, and the number of decoupling years.
 
-**HA:** There is no significant relationship between the GDP and global emissions, and the number of decoupling years.
+**Alternative Hypothesis (HA):** There is a significant relationship between the GDP and global emissions, and the number of decoupling years.
 
 # Data Simulation
 
@@ -114,11 +116,11 @@ log(\mu) &= \beta_0 + \beta_1 \text{Predictor}
 \\
 $$
 
-Fit a logistic model like this:
+Fit a logistic model like below to test the model.
 
-model \<- glm.nb(binary_outcome \~ predictor, data = my_data)
+model \<- glm.nb(count_outcome \~ predictor, data = my_data)
 
-### Set parameters and test model
+## Set up parameters and test the model
 
 ```{r}
 #| label: data-simulation
@@ -146,10 +148,11 @@ negbinomial <- glm.nb(y ~ x, data = my_data)
 
 ```
 
-### Visualize the model
+## Visualize the model
 
 ```{r}
-library(ggplot2)
+#| label: fig-emitting-countries
+#| fig-cap: "Figure 1: Negative Binomial Model"
 
 # Create predictions from the model
 my_data$prediction <- predict(negbinomial, type = "response")
@@ -164,6 +167,8 @@ ggplot(my_data, aes(x = x, y = y)) +
   theme_minimal()
 ```
 
+## Extract coefficient of the tested model
+
 ```{css, echo=FALSE}
 .table, th, td {
   font-size: 0.9em;
@@ -173,14 +178,13 @@ ggplot(my_data, aes(x = x, y = y)) +
 }
 ```
 
-Let's check the coefficients of this model.
-
 ```{r}
 # Summarize the model in a table
 negbinomial_summary <- list ("Negative Binomial" = glm.nb(y ~ x, data = my_data))
 modelsummary(negbinomial_summary)
 
 ```
+
 Here, let's check the dispersion parameter that controls the amount of over dispersion in the data.
 
 ```{r}
@@ -190,9 +194,19 @@ print(paste0("Estimated Theta: ", round(estimated_theta, 4)))
 
 ```
 
+The coefficients from our simulation are almost same as the ones we used initially. This tells us that our model is set up correctly and uses the right negative binomial settings.
+
+| Coefficients | Set up | Simulated |
+|--------------|--------|-----------|
+| beta0        | 0.6    | 0.61      |
+| beta1        | 1.8    | 1.79      |
+| theta        | 2      | 1.97      |
+
+Now, we can run the negative binomial regression on our real data.
+
 # GDP and Emissions Data
 
-### Read GDP and emissions data set
+## Read the GDP and emissions data set
 
 ```{r}
 #| output: false
@@ -220,9 +234,9 @@ gdp <- read_csv(here::here('data', 'API_NY.GDP.MKTP.CD_DS2_en_csv_v2_280632', 'A
 
 ```
 
-### Data wrangling
+## Data wrangling
 
-**Combine and clean power sub sector data for yearly analysis.**
+**Combine and clean power sub sector data for yearly analysis.** - We combine data from electricity, heat plants, and other energy sub-sectors to create a clean, year-wise dataset. This provides clear insights into trends and patterns in energy production, enabling meaningful comparisons across countries over time.
 
 ```{r}
 # Combine all three sub sector data sets
@@ -241,7 +255,7 @@ power_year_cleaned <- power_year %>%
 
 ```
 
-**Clean and reshape GDP data for further analysis.**
+**Clean and reshape GDP data for further analysis.** - We clean and reshape the GDP dataset into a long format to for annual analysis. This restructure allows easy integration with other datasets and helps accurate, time-based comparisons.
 
 ```{r}
 # Convert data to long format
@@ -257,7 +271,7 @@ gdp_long<- gdp %>%
   year = as.numeric(year))
 ```
 
-**Join power sub sector and GDP data for a streamlined structure and easy analysis.**
+**Combine power sub sector and GDP data for a streamlined structure and easy analysis.** - By combining power sub-sector and GDP data, we create a dataset that has comprehensive details of energy-related emissions in relation to GDP across countries and over time.
 
 ```{r}
 # Join the data frame and reorder the columns
@@ -270,7 +284,11 @@ power_gdp <- power_year_cleaned %>%
 
 ```
 
-#### Identify ten highest emissions countries
+## Identify ten highest emissions countries from year 2015 to 2024
+
+### Calculate top 10 emitting countries
+
+Here, we identify the ten countries with the highest emission levels globally over the past decade (2015–2024). This will make it easier to observe trends and interpret the decoupling year when we calculate it later.
 
 ```{r}
 # Calculate the mean emissions of countries for each year (2015 - 2024)
@@ -282,7 +300,7 @@ power_gdp_mean <- power_gdp %>%
   arrange(desc(mean))
 
 # Top 10 countries by overall mean emissions for all years
-top_10_countries <- power_gdp_mean %>%
+top_10_emitter <- power_gdp_mean %>%
   group_by(country_name) %>%
   summarize(overall_mean = mean(mean), .groups = 'drop') %>%
   arrange(desc(overall_mean)) %>%
@@ -290,24 +308,89 @@ top_10_countries <- power_gdp_mean %>%
 
 # Filter to keep only top 10 countries
 power_gdp_mean_top10 <- power_gdp_mean %>%
-  filter(country_name %in% top_10_countries$country_name)
+  filter(country_name %in% top_10_emitter$country_name)
 
 ```
 
-**Visualize the top ten highest emitting countries.**
+### Visualize top ten 10 emitting countries
 
 ```{r}
+#| label: fig-emitting-countries
+#| fig-cap: "Figure 2: The plot shows the annual mean carbon emissions from 2015 to 2024 for the ten highest-emitting countries. This allows us to visualize trends over time."
+
+# Visualize top ten emitting countries
  ggplot(power_gdp_mean_top10, aes(x = year, y = mean, color = country_name)) +
   geom_line() +
   scale_x_continuous(breaks = seq(2015, 2024, by = 1)) +
   scale_y_continuous(labels = scales::label_number(scale = 1e-6, suffix = "M t")) +
   labs(x = "Year",
-       y = "CO2 emission per metric tonnes",
-       title = "Top ten highest emitting countries from 2015 to 2024",
+       y = "Carbon emission per metric tonnes",
+       title = "Top ten emitting countries from 2015 to 2024",
        color = "Country") +
   theme_classic()
 ```
-#### Calculate GDP and emissions changes 
+
+The figure 2 shows that the highest‐emitting countries are China, United States, India, Russia, Japan, Saudi Arabia, Indonesia, South Africa, Korea and Iran.
+
+## Identify top ten countries with increasing GDP from year 2015 to 2024
+
+### Calculate top ten countries with increasing GDP 
+
+We again identify the ten countries that have experienced increasing GDP over the past decade, from 2015 to 2024. This helps us highlight consistent economic growth trends and examine their potential impacts on energy consumption.
+
+```{r}
+# Calculate the mean emissions of countries for each year (2015 - 2024)
+power_gdp_mean <- power_gdp %>%
+  drop_na(gdp_values) %>%
+  group_by(country_name, year) %>%
+  summarize(mean = mean(gdp_values),
+            .groups = 'drop') %>%
+  arrange(desc(mean))
+
+# Top 10 countries by overall mean emissions for all years
+top_10_gdp <- power_gdp_mean %>%
+  group_by(country_name) %>%
+  summarize(overall_mean = mean(mean), .groups = 'drop') %>%
+  arrange(desc(overall_mean)) %>%
+  slice_head(n = 10)
+
+# Filter to keep only top 10 countries
+power_gdp_mean_gdp <- power_gdp_mean %>%
+  filter(country_name %in% top_10_gdp$country_name)
+```
+
+### Visualize top ten countries with increasing GDP  
+
+```{r}
+#| label: fig-increasing-gdp-countries
+#| fig-cap: "Figure 3: The plot shows the annual mean GDP from 2015 to 2024 for the ten countries with the highest GDP. This allows us to visualize economic growth trends over time."
+
+# Visualize top ten countries with increasing GDP
+ggplot(power_gdp_mean_gdp, aes(x = year, y = mean, color = country_name)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = seq(2015, 2024, by = 1)) +
+  scale_y_continuous(labels = scales::label_number(scale = 1e-10, suffix = "B")) +
+  labs(
+    title = "Mean GDP of Top 10 Countries (2015–2024)",
+    x = "Year",
+    y = "Mean GDP",
+    color = "Country"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    legend.title = element_text(size = 12)
+  )
+
+```
+
+The figure 3 indicates that the countries with the highest GDP are United States, China, Japan, Germany, the United Kingdom, India, France, Italy, Brazil and Canada.
+
+## Calculate GDP and emissions changes
+
+We calculate the total GDP and carbon emissions for each country by year and computed the corresponding annual percentage changes. This provides insights into how economic growth and emissions have changed over time for each country.
 
 ```{r}
 # Aggregate GDP and emissions by country and year
@@ -328,6 +411,8 @@ annual_changes <- country_totals %>%
 
 ### Identify countries with increased GDP and decreased emissions
 
+This analysis gives countries where GDP increased while carbon emissions decreased. It highlights instances of environmental-economic decoupling.This provides a clear view of successful decoupling cases.
+
 ```{r}
 # Find the cases where emissions decreased while GDP increased
 decoupling <- annual_changes %>%
@@ -343,13 +428,14 @@ decoupling_case <- decoupling %>%
             .groups = 'drop') %>%
   arrange(desc(decoupling_years))
 
-# View results
-print(decoupling_case)
 ```
 
-#### Visualize top ten countries with decoupling effects
+### Visualize top ten countries with decoupling effects
 
 ```{r}
+#| label: fig-increasing-gdp-countries
+#| fig-cap: "Figure 4: The plot shows the top ten countries with the most years where GDP increased and carbon emissions decreased. Each bar represents the number of years a country experienced this decoupling effect."
+
 # Filter the top ten countries with decoupling effects
 decoup_ten <- decoupling_case %>%
   arrange(desc(decoupling_years)) %>%
@@ -358,7 +444,7 @@ decoup_ten <- decoupling_case %>%
 # Plot a graph for top ten countries
 ggplot(decoup_ten, aes(x = reorder(country_name, decoupling_years), 
                        y = decoupling_years)) +
-  geom_col(fill = "darkolivegreen4") +
+  geom_col(fill = 'coral2') +
   geom_text(aes(label = decoupling_years), hjust = -0.3, size = 3.5) +
   coord_flip() +
   theme_classic() +
@@ -368,9 +454,17 @@ ggplot(decoup_ten, aes(x = reorder(country_name, decoupling_years),
   ylim(0, max(decoup_ten$decoupling_years) * 1.1)
 
 ```
-### Fit GDP and emissions data into a model
 
-For our regression analysis, our statistical notation is following
+
+The figure 4 highlights the countries that achieved the decoupling case: Ireland, Romania, Bulgaria, Luxembourg, the Netherlands, Poland, Portugal, Ukraine, United States and Australia.
+
+### Interpretation of data analysis
+
+These figures show an interesting relationship between economic growth and global emissions . Countries with the highest levels of greenhouse gas emissions are typically those with substantial economic resources and intensive industrial activity. Likewise, the nations with the largest GDPs are predominantly highly developed and economically influential. China, United States and India are on both lists, reflecting their positions as large, populous economies with significant global production footprints. However, when we look at the decoupling case, defined as increasing GDP accompanied by declining emissions, only United States was able to achieve decoupling over the past decade, from 2015 to 2024. This explains that it may be challenging for the countries to balance economic growth with meaningful emissions reductions.
+
+# Fit GDP and emissions data into a model
+
+We fit GDP and emissions data into a negative binomial model to quantify the relationship between economic growth and carbon emissions. This allows us to understand whether changes in GDP are associated with changes in emissions and to make predictions or draw inferences based on the model.
 
 $$
 \begin{align}
@@ -380,7 +474,7 @@ log(\mu) &= \beta_0 + \beta_1 \text{avg_emission_reduction} + \beta_2 \text{avg_
 \\
 $$
 
-Now, let's fit our decoupling case in the negative binomial model:
+Now, let's fit our decoupling case in the negative binomial model.
 
 ```{r}
 #| output: false
@@ -393,7 +487,7 @@ nb_model <- glm.nb(decoupling_years ~ avg_gdp_growth + avg_emission_reduction,
 
 ```
 
-Let's extract the model coefficient and convert them into tabular form
+We extract the model coefficients and display them in a table to facilitate interpretation and comparison.
 
 ```{r}
 # Extract coefficient summary
@@ -405,36 +499,47 @@ results_table <- data.frame(
   Estimate = coef_table[, "Estimate"],
   SE = coef_table[, "Std. Error"],
   `z value` = coef_table[, "z value"],
-  `p value` = coef_table[, "Pr(>|z|)"]
-)
+  `p value` = coef_table[, "Pr(>|z|)"])
 
 # Create pretty table
 kable(results_table, 
       digits = 4,
       col.names = c("Predictor", "Estimate (β)", "Std. Error", "z-value", "p-value"),
-      caption = "Negative Binomial Regression Results: Predictors of Decoupling Years",
+      caption = "Coefficients of Negative Binomial Regression",
       align = c("l", "r", "r", "r", "r")) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE,
                 position = "center") %>%
-  row_spec(0, bold = TRUE, background = "#f0f0f0") %>%
-  footnote(general = "Note: Dependent variable is the count of years achieving decoupling (2015-2024).",
-           general_title = "",
-           footnote_as_chunk = TRUE)
+  row_spec(0, bold = TRUE, background = "#f0f0f0") 
 ```
 
-theta dispersion parameter chahincha, add here
+We extract the estimated theta to evaluate the degree of dispersion and the precision of the estimate.
+
+*Note:* In the negative binomial model, the dispersion parameter theta captures the degree of over dispersion in the data, how much the variance exceeds the mean. A higher theta indicates lower overdispersion, whereas a lower theta suggests stronger overdispersion.
 
 ```{r}
-# Extract theta and standard error
+# Calculate value of theta
 theta_value <- nb_model$theta
 theta_value
-theta_se <- attr(nb_model$theta, "SE")
-theta_se
-
 ```
 
-#### Create prediction data for GDP and emissions
+The estimated dispersion parameter theta is extremely large at ~ 59,399, which indicates that the data has almost no overdispersion. A theta of this magnitude suggests that the variance of the outcome is very close to the mean.
+
+## Interpretation of the Coefficients
+
+Here, we will interpret the coefficients of our model. The coefficients of the negative binomial regression show that both average GDP growth and average emission reduction have weak relationships with the decoupling year.
+
+The intercept coefficient of 1.0423 is statistically significant  at p < 0.0001 and represents the expected log count of decoupling year when both GDP growth and emission reduction are at zero.
+
+The coefficient for average GDP growth is -0.0141, and its p-value (0.0587) shows that this relationship is not strong enough to be considered statistically significant at the 5% level. This negative coefficient suggests that for every one unit increase in average GDP growth, the expected log count of decoupling years decreases by 0.0141, when emission reduction is held constant.
+
+The coefficient for average emission reduction is -0.0090, which is marginally significant at p = 0.0523. This indicates that for every one unit increase in emission reduction, the expected log count of decoupling year decreases by 0.0090.
+
+This provides evidence for the challenges of achieving decoupling discussed above in the data analysis section. The negative relationship between GDP growth and decoupling years indicates that countries with rapid economic growth may face greater difficulty in sustaining decoupling. This could mean that faster growth increases energy demand and industrial activity that overtakes  emission reduction efforts. It could also suggest the presence of confounding variable that need further investigation. Given our observation that only United States achieved true decoupling between 2015 and 2024, these marginal effects align with the overall narrative that balancing economic growth with meaningful emissions reductions remains exceptionally challenging for most countries.
+
+# Create prediction data for GDP and emissions
+
+We create a prediction grid for GDP growth and average emission reduction, then use the fitted negative binomial model to generate prediction and their standard errors. Using these, we construct 95% confidence intervals, providing a range of predicted values for each cases.
 
 ```{r}
 # Create a prediction grid
@@ -442,15 +547,15 @@ prediction_grid <- expand_grid(
   avg_gdp_growth = seq(min(decoupling_case$avg_gdp_growth),
                        max(decoupling_case$avg_gdp_growth),
                        length.out = 50),
-  avg_emission_reduction = median(decoupling_case$avg_emission_reduction))
+  avg_emission_reduction = mean(decoupling_case$avg_emission_reduction))
 
-# Generate predictions and standard errors
+# Generate predictions and standard errors on link scale
 prediction_se <- predict(nb_model, 
                      newdata = prediction_grid, 
                      type = "link", 
                      se.fit = TRUE)
 
-# Generate confidence intervals
+# Construct confidence intervals
 prediction_ci <- prediction_grid %>%
   mutate(log_mu = prediction_se$fit,
          log_mu_se = prediction_se$se.fit,
@@ -463,11 +568,15 @@ prediction_ci <- prediction_grid %>%
     mu_upr = exp(log_mu_upr))
 ```
 
-Note: let's create a factor for emissions level for visualization. First we will create a categorical variable `emission' that labels the three different emission reduction levels in the prediction grid. It will  convert the numeric emission reduction values into meaningful text labels.
+We should note that the prediction grid creates a set of hypothetical scenarios to make predictions from the model. For GDP growth, we use the minimum and maximum values to cover the full observed range to see how predictions change from low to high GDP growth. For emission reduction, we use the average value to keep it constant to focus on how changes in GDP growth affect the predicted outcome.
 
-#### Visualize the model prediction
+## Visualize the model prediction
 
 ```{r}
+#| label: fig-increasing-gdp-countries
+#| fig-cap: "The plot visualizes the model predictions for the number of decoupling years as GDP increases and emission decreases. The pink line shows the predicted values of declining emissions, the shaded blue area represents the 95% confidence interval at the mean emission reduction, and the green points indicate the observed decoupling cases for each country."
+
+
 # Plot with single ribbon
 ggplot() +
   # Add the 95% CI ribbon
@@ -491,7 +600,14 @@ ggplot() +
         plot.subtitle = element_text(hjust = 0.5))
 ```
 
+## Interpretation of the confidence interval
+The width of the confidence intervals generally  indicates how certain the model is about its predictions. A narrower confidence interval means more confidence. A wider confidence interval means greater uncertainty. Since, our confidence interval is wider here, the model is less certain about predictions for very low or very high GDP growth rates because there are very fewer observations in those ranges.
 
+# Conclusion
 
+We conclude that we fail to reject the null hypothesis.
+
+This study shows how economic growth and environmental sustainability are related. It highlights the global challenge of effective climate action. Although countries like China, United States and India rank high in both emissions and GDP because of their large economies and intensive industrial activity, only United States was able to achieve decoupling between 2015 and 2024. This means that most countries struggled to grow their economies while also reducing emissions. The results suggest that when economies expand, they increase energy use, technology use and industrial activity, the confounding variables that may indirectly influence emissions. These activities often grow faster than emission reduction efforts. Among the top ten countries that showed decoupling, only one achieved it, showing how rare environmental-economic decoupling still is. Overall, the findings suggest that achieving decoupling requires stronger policies, new technologies and long-term economic changes that allow countries to grow without harming the environment.
+```{r}
 
 
