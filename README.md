@@ -40,7 +40,7 @@ global-emission-gdp-energy-dynamics
 └───global-emission-gdp-energy-dynamics.Rproj
 └───README.md
 └───emissions_gdp.qmd
-└───emissions_gdp.html
+
 ```
 ## Course Information
 
